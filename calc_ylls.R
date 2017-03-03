@@ -31,6 +31,7 @@ setnames(le,"Pred_ex","ylls")
 ## read in census file and format
 ##############################################################
 cen <- fread(paste0(rootdir,"/census.csv"))
+## https://www.census.gov/population/projections/files/filelayout/NP2014_D1.pdf
 cen <- cen[year %in% c(2015,2016)]
 cen <- melt(cen,id.vars=c("origin","race","sex","year"))
 setnames(cen,c("variable","value"),c("age","pop"))
@@ -43,6 +44,29 @@ cen[,race:=factor(race,labels=c("All races","White alone","Black alone","AIAN al
                                 "Asian alone or in combination","NHPI alone or in combination"))]
 cen[,sex:=factor(sex,labels=c("both","male","female"))]
 ## recode races to match races from the counted
+## the counted uses non-hispanic race-exclusive categories as denominators
+## we will match their methods, but do sensitivity analyses to see if conclusions differ
+## when different are assumptions are applied to solve the issue that the race categories are not consistent
+## between the data sources
+
+## Hispanic/Latino
+## the counted has "hispanic/latino" as race rather than ethnicity, so taking "Hispanic" as denominator from census
+hisp <- copy(cen[origin=="Hispanic" & race=="All races"])
+hisp[,race:="Hispanic/Latino"]
+
+## white, black, native american
+wbn <- copy(cen[(race %in% c("Black alone","White alone","AIAN alone")) & origin == "Not Hispanic"])
+wbn[,race:=gsub(" alone","",race)]
+wbn[race=="AIAN",race:="Native American"]
+
+## Asian/Pacific Islander
+api <- copy(cen[(race %in% c("AHPI alone" | "Asian alone")) & origin == "Not Hispanic"])
+setkey(api,origin,sex,year,age)
+api <- api[,list(pop=sum(pop)),by=key(api)]
+api[,race:="Asian/Pacific Islander"]
+
+## No population for Arab-American, Unknown, or Other from census (One "Other" death in data, 39 Unknown, 7 Arab-American)
+## These will count in all-race numbers, but we cannot calculate race-specific rates, only total counts
 
 
 
