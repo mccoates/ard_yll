@@ -7,85 +7,99 @@ if (substr(Sys.info()["user"],4,5)=="33") {
   rootdir <- "M:/professional/race/thecounted-data/"
 } 
 
+##############################################################
 ## read in and format data from The Counted
+##############################################################
 d <- fread(paste0(rootdir,"the-counted-2016.csv"))
 d2 <- fread(paste0(rootdir,"the-counted-2015.csv"))
 d <- rbind(d,d2)
 d[age=="Unknown",age:=NA]
-d[age=="40s",age:="45"]
+d[age=="40s",age:="45"] ## assumption for the one death in the age "40s"
 d[,age:=as.numeric(age)]
+setnames(d,c("raceethnicity","classification"),c("race","cod"))
+d[,age_group:=cut(age,breaks=c(seq(from=0,to=90,by=5)))]
 
+
+##############################################################
 ## read in standard life expectancy file and format
+##############################################################
 le <- fread(paste0(rootdir,"FINAL_min_pred_ex.csv"))
 setnames(le,"Pred_ex","ylls")
 
+
+##############################################################
 ## read in census file and format
+##############################################################
 cen <- fread(paste0(rootdir,"/census.csv"))
-##cen <- melt(cen,id.vars=c("origin","race","sex","year"))
-## for now, just make all-age rates
-cen <- cen[,c("origin","race","sex","year","total_pop"),with=F]
-cen[sex==1 & origin==0 & year==2015 & race==8]$total_pop
+cen <- cen[year %in% c(2015,2016)]
+cen <- melt(cen,id.vars=c("origin","race","sex","year"))
+setnames(cen,c("variable","value"),c("age","pop"))
+cen[,age:=gsub("pop_","",age)]
+cen[age=="total_pop",age:="All Ages"]
+## recode some of the variables
+cen[,origin:=factor(origin,labels=c("Total","Not Hispanic","Hispanic"))]
+cen[,race:=factor(race,labels=c("All races","White alone","Black alone","AIAN alone","Asian alone","AHPI alone","Two or More Races",
+                                "White alone or in combination","Black alone or in combination","AIAN alone or in combination",
+                                "Asian alone or in combination","NHPI alone or in combination"))]
+cen[,sex:=factor(sex,labels=c("both","male","female"))]
+## recode races to match races from the counted
 
 
 
-
+######################################################
 ## create YLLs
+######################################################
 d <- merge(d,le,by="age",all.x=T)
 if (nrow(d[!is.na(age) & is.na(ylls)]) > 0) stop("predex didn't merge for some ages")
 
-## create rates
+## some ages unknown, we don't want to make assumptions about them, when making comparisons between age groups
+## but we do want to count their YLLs in the "All Ages" category
+## to make a conservative assumption, we will assign them the mean YLLs across the dataset
+d[is.na(ylls),ylls:=mean(d$ylls,na.rm=T)]
 
-
-
-#write.csv(d,paste0(rootdir,"counted_ylls.csv"),row.names=F)
-
-## tabulate age
+########################################################
+## collapse to counts by important variables
+########################################################
 tab <- copy(d)
-tab[,n:=1]
-setkey(tab,raceethnicity,year)
-tab <- tab[,list(avg_age=mean(age,na.rm=T),n=sum(n),ylls=sum(ylls,na.rm=T)),by=key(tab)] ## FIXME: counting missings in n
+setkey(tab,age_group,gender,race,year,cod,armed)
+tab[,deaths:=1]
+tab <- tab[,list(avg_age=mean(age),deaths=sum(deaths),ylls=sum(ylls)),by=key(tab)]
+
+########################################################
+## merge age-specific, race-specific populations from census
+########################################################
 
 
-1000000*584/cen[sex==0 & origin==1 & year==2015 & race==1]$total_pop
-## White, non-hispanic, both sexes, "white alone" 2.944 compared to 2.95
 
 
-1000000*574/cen[sex==0 & origin==1 & year==2016 & race==1]$total_pop
-## White, non-hispanic, both sexes, "white alone" 2.89 compared to 2.9
+######################################################################################
+## collapse to create both-gender, all-race, all-death type, all-armed counts, all-age
+######################################################################################
+## function to do the collapse
+add_agg <- function(data,var,cats,aggname) {
+  add <- copy(data)
+  add <- add[,list(avg_age=weighted.mean(avg_age,w=deaths,na.rm=T),deaths=sum(deaths),ylls=sum(ylls)),by=c(cats)]
+  add[,paste0(var):=aggname]
+  return(add)
+}
+## dataframe to loop over for the aggregate name
+aggloop <- data.frame(vars=c("age_group","gender","race","cod","year","armed"),
+                      aggname=c("All Ages","Both","All Races","All Causes","2015-2016","Armed or Unarmed"),stringsAsFactors=F)
+for (x in 1:nrow(aggloop)) {
+  out <- add_agg(tab,var=aggloop$vars[x],cats=aggloop$vars[!aggloop$vars==aggloop$vars[x]],aggname=aggloop$aggname[x])
+  tab <- rbind(tab,out)
+}
 
 
-1000000*307/cen[sex==0 & origin==1 & year==2015 & race==2]$total_pop
-## black, non-hispanic, both sexes, "black alone" 7.717 compared to 7.69
+####################################################################################
+## re-merge aggregate populations to make sure aggregated properly
+####################################################################################
 
 
-1000000*266/cen[sex==0 & origin==1 & year==2016 & race==2]$total_pop
-## black, non-hispanic, both sexes, "black alone" 6.627 compared to 6.66
 
 
-1000000*307/cen[sex==0 & origin==0 & year==2015 & race==2]$total_pop
-## black, total hispanic, both sexes, "black alone" 7.231 compared to 7.69
 
 
-1000000*266/cen[sex==0 & origin==0 & year==2016 & race==2]$total_pop
-## black, total hispanic, both sexes, "black alone" 6.204 compared to 6.66
 
-1000000*307/cen[sex==0 & origin==0 & year==2015 & race==8]$total_pop
-## black, total hispanic, both sexes, "black alone or combination" 6.656 compared to 7.69
-
-
-1000000*266/cen[sex==0 & origin==0 & year==2016 & race==8]$total_pop
-## black, total hispanic, both sexes, "black alone or combination" 5.698 compared to 6.66
-
-1000000*307/cen[sex==0 & origin==1 & year==2015 & race==8]$total_pop
-## black, not hispanic, both sexes, "black alone or combination" 7.19 compared to 7.69
-
-
-1000000*266/cen[sex==0 & origin==1 & year==2016 & race==8]$total_pop
-## black, not hispanic, both sexes, "black alone or combination" 6.161 compared to 6.66
-
-##
-#armed <- as.matrix(table(d$armed,d$raceethnicity))
-#tots <- apply(armed,MARGIN=2,sum)
-#test <- t(apply(armed,MARGIN=1,FUN=function(x){x/tots}))
 
 
