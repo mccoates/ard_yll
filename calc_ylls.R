@@ -1,5 +1,6 @@
 
 rm(list=ls())
+library(tools)
 library(data.table)
 library(ggplot2)
 
@@ -17,7 +18,7 @@ d[age=="Unknown",age:=NA]
 d[age=="40s",age:="45"] ## assumption for the one death in the age "40s"
 d[,age:=as.numeric(age)]
 setnames(d,c("raceethnicity","classification"),c("race","cod"))
-d[,age_group:=cut(age,breaks=c(seq(from=0,to=90,by=5)))]
+d[,age_group:=cut(age,breaks=c(seq(from=0,to=80,by=5),110),right=F)]
 
 
 ##############################################################
@@ -60,14 +61,32 @@ wbn[,race:=gsub(" alone","",race)]
 wbn[race=="AIAN",race:="Native American"]
 
 ## Asian/Pacific Islander
-api <- copy(cen[(race %in% c("AHPI alone" | "Asian alone")) & origin == "Not Hispanic"])
+api <- copy(cen[(race %in% c("AHPI alone","Asian alone")) & origin == "Not Hispanic"])
 setkey(api,origin,sex,year,age)
 api <- api[,list(pop=sum(pop)),by=key(api)]
 api[,race:="Asian/Pacific Islander"]
 
 ## No population for Arab-American, Unknown, or Other from census (One "Other" death in data, 39 Unknown, 7 Arab-American)
 ## These will count in all-race numbers, but we cannot calculate race-specific rates, only total counts
+tot <- copy(cen[race == "All races" & origin=="Total"])
+tot <- rbindlist(list(tot,api,wbn,hisp),use.names=T)
+tot[,origin:=NULL]
+tot[,age_group:=cut(as.numeric(as.character(age)),breaks=c(seq(from=0,to=80,by=5),110),right=F)]
+tot[age=="All Ages",age_group:="All Ages"]
+tot[,race:=as.character(race)]
+tot[race=="All races",race:="All Races"]
+tot[,sex:=toTitleCase(as.character(sex))]
+tot[sex=="both",sex:="Both"]
+setnames(tot,"sex","gender")
 
+## add for both years, collapse to age groups
+setkey(tot,race,gender,year,age_group)
+tot <- tot[,list(pop=sum(pop)),by=key(tot)]
+add <- copy(tot)
+setkey(add,race,gender,age_group)
+add <- add[,list(pop=sum(pop)),by=key(add)]
+add[,year:="2015-2016"]
+tot <- rbind(tot,add)
 
 
 ######################################################
@@ -89,13 +108,6 @@ setkey(tab,age_group,gender,race,year,cod,armed)
 tab[,deaths:=1]
 tab <- tab[,list(avg_age=mean(age),deaths=sum(deaths),ylls=sum(ylls)),by=key(tab)]
 
-########################################################
-## merge age-specific, race-specific populations from census
-########################################################
-
-
-
-
 ######################################################################################
 ## collapse to create both-gender, all-race, all-death type, all-armed counts, all-age
 ######################################################################################
@@ -114,15 +126,19 @@ for (x in 1:nrow(aggloop)) {
   tab <- rbind(tab,out)
 }
 
-
 ####################################################################################
-## re-merge aggregate populations to make sure aggregated properly
+## merge populations, make rates
 ####################################################################################
 
+dat <- merge(tot[,c("race","gender","year","age_group","pop"),with=F],tab,by=c("race","gender","year","age_group"),all.y=T)
+dat[,death_rate:=deaths/pop*100000]
+dat[,yll_rate:=ylls/pop*100000]
+setnames(dat,c("deaths","ylls"),c("death_count","yll_count"))
 
-
-
-
+#####################################################################
+## make a table
+#####################################################################
+t1 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
 
 
 
