@@ -88,6 +88,25 @@ add <- add[,list(pop=sum(pop)),by=key(add)]
 add[,year:="2015-2016"]
 tot <- rbind(tot,add)
 
+## create white/non-white binary populations
+bin <- copy(cen[(race=="White alone" & origin == "Not Hispanic") | (race=="All races" & origin == "Total")])
+bin[race=="White alone" & origin == "Not Hispanic",race:="White"]
+bin[race=="All races" & origin == "Total",race:="Non-White"]
+bin[,origin:=NULL]
+bin[,age_group:=cut(as.numeric(as.character(age)),breaks=c(seq(from=0,to=80,by=5),110),right=F)]
+bin[age=="All Ages",age_group:="All Ages"]
+bin[,race:=as.character(race)]
+bin[,sex:=toTitleCase(as.character(sex))]
+bin[sex=="both",sex:="Both"]
+setnames(bin,"sex","gender")
+setkey(bin,race,gender,year,age_group)
+bin <- bin[,list(pop=sum(pop)),by=key(bin)]
+add <- copy(bin)
+setkey(add,race,gender,age_group)
+add <- add[,list(pop=sum(pop)),by=key(add)]
+add[,year:="2015-2016"]
+bin <- rbind(bin,add)
+
 
 ######################################################
 ## create YLLs
@@ -131,15 +150,44 @@ for (x in 1:nrow(aggloop)) {
 ####################################################################################
 
 dat <- merge(tot[,c("race","gender","year","age_group","pop"),with=F],tab,by=c("race","gender","year","age_group"),all.y=T)
-dat[,death_rate:=deaths/pop*100000]
-dat[,yll_rate:=ylls/pop*100000]
+dat[,death_rate:=deaths/pop*1000000]
+dat[,yll_rate:=ylls/pop*1000000]
 setnames(dat,c("deaths","ylls"),c("death_count","yll_count"))
 
 #####################################################################
 ## make a table
 #####################################################################
 t1 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
+t1 <- t1[,c("race","death_count","death_rate","yll_count","yll_rate","avg_age"),with=F]
 
 
+######################################################################
+## make figure
+######################################################################
+
+toplot <- copy(dat[year=="2015-2016" & race!="All Races" & (!is.na(age_group) & age_group != "All Ages") & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
+toplot[,age:=substr(age_group,2,3)]
+toplot[,age:=gsub(",","",age)]
+
+## stacked bar
+gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = death_count,fill=race)) +
+        geom_bar(stat='identity')
+gg
+
+## distributions
+toplot[race!="White",race:="Non-White"]
+setkey(toplot,race,gender,year,age_group,cod,armed)
+toplot <- toplot[,list(avg_age=weighted.mean(avg_age,w=death_count),yll_count=sum(yll_count),death_count=sum(death_count)),by=key(toplot)]
+toplot <- merge(toplot,bin[gender=="Both" & year=="2015-2016" & age_group != "All Ages"],by=c("race","gender","year","age_group"),all=T)
+toplot[is.na(death_count),death_count:=0]
+setkey(toplot,race,gender,year)
+toplot <- toplot[,list(pct_deaths=death_count/sum(death_count),age_group=age_group,pct_pop=pop/sum(pop)),by=key(toplot)]
+toplot <- melt(toplot,id.vars=c("race","gender","year","age_group"))
+toplot[,lines:=paste0(race,"_",variable)]
+toplot[,age:=substr(age_group,2,3)]
+toplot[,age:=gsub(",","",age)]
+
+gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value,group=lines,color=lines)) + geom_line()
+gg
 
 
