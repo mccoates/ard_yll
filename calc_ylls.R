@@ -157,8 +157,62 @@ setnames(dat,c("deaths","ylls"),c("death_count","yll_count"))
 #####################################################################
 ## make a table
 #####################################################################
+roundvars <- c("death_pct","death_rate","yll_pct","yll_rate","avg_age","pop_pct")
 t1 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
-t1 <- t1[,c("race","death_count","death_rate","yll_count","yll_rate","avg_age"),with=F]
+## Other category should include arab-american/Other/Unknown
+t1[race %in% c("Arab-American","Other","Unknown"),race:="Other/Unknown"]
+setkey(t1,race)
+t1 <- t1[,list(death_count=sum(death_count),death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count),
+               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t1)]
+t1[,death_pct:=death_count/sum(death_count)*200]
+t1[,yll_pct:=yll_count/sum(yll_count)*200]
+t1[,pop_pct:=pop/t1[race=="All Races"]$pop*100]
+t1 <- t1[,c("race","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+for (r in roundvars) {
+  t1[[r]] <- round(t1[[r]],1)
+}
+t1 <- t1[order(pop_pct,decreasing=T)]
+
+
+t2 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Male","Female")])
+## Other category should include arab-american/Other/Unknown
+t2[,death_pct:=death_count/sum(death_count)*100]
+t2[,yll_pct:=yll_count/sum(yll_count)*100]
+t2[,pop_pct:=pop/sum(pop)*100]
+t2 <- t2[,c("gender","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+for (r in roundvars) {
+  t2[[r]] <- round(t2[[r]],1)
+}
+t2 <- t2[order(pop_pct,decreasing=T)]
+
+ 
+t3 <- copy(dat[year=="2015-2016" & age_group != "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Both")])
+t3[,age:=substr(age_group,2,3)]
+t3[,age:=as.numeric(as.character(gsub(",","",age)))]
+t3[age < 15,age_grp:="<15 years"]
+t3[age > 14 & age < 25,age_grp:="15 to 24 years"]
+t3[age > 24 & age < 35,age_grp:="25 to 34 years"]
+t3[age > 34 & age < 45,age_grp:="35 to 44 years"]
+t3[age > 44 & age < 55,age_grp:="45 to 54 years"]
+t3[age > 54 & age < 65,age_grp:="55 to 64 years"]
+t3[age > 64,age_grp:="65+ years"]
+setkey(t3,age_grp)
+t3 <- t3[,list(death_count=sum(death_count),death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count),
+               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t3)]
+## Other category should include arab-american/Other/Unknown
+t3[,death_pct:=death_count/sum(death_count)*100]
+t3[,yll_pct:=yll_count/sum(yll_count)*100]
+t3[,pop_pct:=pop/sum(pop)*100]
+t3 <- t3[,c("age_grp","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+for (r in roundvars) {
+  t3[[r]] <- round(t3[[r]],1)
+}
+t3[,age_grp:=factor(age_grp,levels=c("<15 years","15 to 24 years","25 to 34 years","35 to 44 years","45 to 54 years","55 to 64 years","65+ years"))]
+t3 <- t3[order(age_grp,decreasing=F)]
+
+write.csv(t1,paste0(rootdir,"/race_table.csv"),row.names=F)
+write.csv(t2,paste0(rootdir,"/sex_table.csv"),row.names=F)
+write.csv(t3,paste0(rootdir,"/age_table.csv"),row.names=F)
 
 
 ######################################################################
@@ -168,13 +222,21 @@ t1 <- t1[,c("race","death_count","death_rate","yll_count","yll_rate","avg_age"),
 toplot <- copy(dat[year=="2015-2016" & race!="All Races" & (!is.na(age_group) & age_group != "All Ages") & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
 toplot[,age:=substr(age_group,2,3)]
 toplot[,age:=gsub(",","",age)]
-
+setkey(toplot,age_group,age)
+toplot<- toplot[,list(race=race,gender=gender,year=year,cod=cod,armed=armed,pop=pop,avg_age=avg_age,death_count=death_count,yll_count=yll_count,
+             death_rate=death_rate,yll_rate=yll_rate,death_pct=death_count/sum(death_count),yll_pct=yll_count/sum(yll_count)),by=key(toplot)]
 ## stacked bar
 
-gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = death_count,fill=race)) +
-        geom_bar(stat='identity') + ylab("Deaths") + xlab("Age") + 
+gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
+        geom_bar(stat='identity') + ylab("YLLs") + xlab("Age") + 
         scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
-        ggtitle("Arrest-Related Deaths by Age and Race, 2015-2016") + theme_bw()
+        ggtitle("Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
+gg
+
+gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_pct*100,fill=race)) +
+  geom_bar(stat='identity') + ylab("Percent oF YLLs") + xlab("Age") + 
+  scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
+  ggtitle("Percent of Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
 gg
 
 ## distributions
@@ -183,18 +245,20 @@ setkey(toplot,race,gender,year,age_group,cod,armed)
 toplot <- toplot[,list(avg_age=weighted.mean(avg_age,w=death_count),yll_count=sum(yll_count),death_count=sum(death_count)),by=key(toplot)]
 toplot <- merge(toplot,bin[gender=="Both" & year=="2015-2016" & age_group != "All Ages"],by=c("race","gender","year","age_group"),all=T)
 toplot[is.na(death_count),death_count:=0]
+toplot[is.na(yll_count),yll_count:=0]
 setkey(toplot,race,gender,year)
-toplot <- toplot[,list(pct_deaths=death_count/sum(death_count),age_group=age_group,pct_pop=pop/sum(pop)),by=key(toplot)]
+toplot <- toplot[,list(pct_ylls=yll_count/sum(yll_count),age_group=age_group,pct_pop=pop/sum(pop)),by=key(toplot)]
 toplot <- melt(toplot,id.vars=c("race","gender","year","age_group"))
 toplot[,lines:=paste0(race,"_",variable)]
 toplot[,age:=substr(age_group,2,3)]
 toplot[,age:=gsub(",","",age)]
-toplot[,lines:=factor(lines,labels=c("Non-White Deaths","Non-White Population","White Deaths","White Population"))]
+toplot[,lines:=factor(lines,levels=c("Non-White_pct_ylls","Non-White_pct_pop","White_pct_ylls","White_pct_pop"),
+                      labels=c("Non-White YLLs","Non-White Population","White YLLs","White Population"))]
 
 gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value*100,group=lines,color=lines)) + geom_line(size=1.5) +
   ylab("Percent") + xlab("Age") + 
   scale_color_manual("Distribution",values=c("firebrick4","firebrick1","dodgerblue4","dodgerblue")) +
-  ggtitle("Distribution of Population and Arrest-Related Deaths in White \nand Non-White Populations, 2015-2016") + 
+  ggtitle("Distribution of Population and Arrest-Related YLLs in White \nand Non-White Populations, 2015-2016") + 
   theme_bw()
 gg
 
