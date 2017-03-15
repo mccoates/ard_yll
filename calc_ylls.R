@@ -170,8 +170,11 @@ toplot[,age:=substr(age_group,2,3)]
 toplot[,age:=gsub(",","",age)]
 
 ## stacked bar
+
 gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = death_count,fill=race)) +
-        geom_bar(stat='identity')
+        geom_bar(stat='identity') + ylab("Deaths") + xlab("Age") + 
+        scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
+        ggtitle("Arrest-Related Deaths by Age and Race, 2015-2016") + theme_bw()
 gg
 
 ## distributions
@@ -186,8 +189,13 @@ toplot <- melt(toplot,id.vars=c("race","gender","year","age_group"))
 toplot[,lines:=paste0(race,"_",variable)]
 toplot[,age:=substr(age_group,2,3)]
 toplot[,age:=gsub(",","",age)]
+toplot[,lines:=factor(lines,labels=c("Non-White Deaths","Non-White Population","White Deaths","White Population"))]
 
-gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value,group=lines,color=lines)) + geom_line()
+gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value*100,group=lines,color=lines)) + geom_line(size=1.5) +
+  ylab("Percent") + xlab("Age") + 
+  scale_color_manual("Distribution",values=c("firebrick4","firebrick1","dodgerblue4","dodgerblue")) +
+  ggtitle("Distribution of Population and Arrest-Related Deaths in White \nand Non-White Populations, 2015-2016") + 
+  theme_bw()
 gg
 
 
