@@ -91,8 +91,12 @@ tot <- rbind(tot,add)
 ## create white/non-white binary populations
 bin <- copy(cen[(race=="White alone" & origin == "Not Hispanic") | (race=="All races" & origin == "Total")])
 bin[race=="White alone" & origin == "Not Hispanic",race:="White"]
-bin[race=="All races" & origin == "Total",race:="Non-White"]
+bin[race=="All races" & origin == "Total",race:="All"]
 bin[,origin:=NULL]
+bin <- dcast.data.table(bin,sex+year+age~race,value.var="pop")
+bin[,"Non-White":=All - White]
+bin[,All:=NULL]
+bin <- melt(bin,id.vars=c("sex","year","age"),value.name = "pop",variable.name = "race")
 bin[,age_group:=cut(as.numeric(as.character(age)),breaks=c(seq(from=0,to=80,by=5),110),right=F)]
 bin[age=="All Ages",age_group:="All Ages"]
 bin[,race:=as.character(race)]
@@ -225,12 +229,31 @@ toplot[,age:=gsub(",","",age)]
 setkey(toplot,age_group,age)
 toplot<- toplot[,list(race=race,gender=gender,year=year,cod=cod,armed=armed,pop=pop,avg_age=avg_age,death_count=death_count,yll_count=yll_count,
              death_rate=death_rate,yll_rate=yll_rate,death_pct=death_count/sum(death_count),yll_pct=yll_count/sum(yll_count)),by=key(toplot)]
+toplot[,race:=factor(race,levels=c("White","Black","Hispanic/Latino","Native American","Asian/Pacific Islander","Arab-American","Other","Unknown"))]
+
+extra <- copy(dat[year=="2015-2016" & (!race %in% c("All Races","Unknown")) & (!is.na(age_group) & age_group != "All Ages") & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
+extra[,age:=substr(age_group,2,3)]
+extra[,age:=gsub(",","",age)]
+setkey(extra,age_group,age)
+extra<- extra[,list(race=race,gender=gender,year=year,cod=cod,armed=armed,pop=pop,avg_age=avg_age,death_count=death_count,yll_count=yll_count,
+                      death_rate=death_rate,yll_rate=yll_rate,death_pct=death_count/sum(death_count),yll_pct=yll_count/sum(yll_count)),by=key(extra)]
+extra[race!="White",race:="Non-White"]
+setkey(extra,age_group,age,race,gender,year,cod,armed)
+extra <- extra[,list(pop=sum(pop),avg_age=weighted.mean(avg_age,w=death_count),death_count=sum(death_count),yll_count=sum(yll_count)),by=key(extra)]
+extra[,race:=factor(race,levels=c("White","Non-White"))]
+
 ## stacked bar
 
 gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
         geom_bar(stat='identity') + ylab("YLLs") + xlab("Age") + 
         scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
         ggtitle("Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
+gg
+
+gg <- ggplot(extra, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
+  geom_bar(stat='identity') + ylab("YLLs") + xlab("Age") + 
+  scale_fill_brewer("Race/Ethnicity",type="qual",palette=2) +
+  ggtitle("Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
 gg
 
 gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_pct*100,fill=race)) +
@@ -246,6 +269,7 @@ toplot <- toplot[,list(avg_age=weighted.mean(avg_age,w=death_count),yll_count=su
 toplot <- merge(toplot,bin[gender=="Both" & year=="2015-2016" & age_group != "All Ages"],by=c("race","gender","year","age_group"),all=T)
 toplot[is.na(death_count),death_count:=0]
 toplot[is.na(yll_count),yll_count:=0]
+plotrate <- copy(toplot)
 setkey(toplot,race,gender,year)
 toplot <- toplot[,list(pct_ylls=yll_count/sum(yll_count),age_group=age_group,pct_pop=pop/sum(pop)),by=key(toplot)]
 toplot <- melt(toplot,id.vars=c("race","gender","year","age_group"))
@@ -262,4 +286,14 @@ gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value*100,group=lines,
   theme_bw()
 gg
 
+plotrate[,yll_rate:=yll_count/pop*1000000]
+plotrate[,age:=substr(age_group,2,3)]
+plotrate[,age:=gsub(",","",age)]
+
+gg <- ggplot(plotrate,aes(x=as.numeric(as.character(age)),y=yll_rate*100,group=race,color=race)) + geom_line(size=1.5) +
+  ylab("YLL Rate (per million)") + xlab("Age") + 
+  scale_color_manual("Distribution",values=c("firebrick3","dodgerblue3")) +
+  ggtitle("Rate of Arrest-Related YLLs in White \nand Non-White Populations by Age, 2015-2016") + 
+  theme_bw()
+gg
 
