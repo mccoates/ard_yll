@@ -242,6 +242,15 @@ setkey(extra,age_group,age,race,gender,year,cod,armed)
 extra <- extra[,list(pop=sum(pop),avg_age=weighted.mean(avg_age,w=death_count),death_count=sum(death_count),yll_count=sum(yll_count)),by=key(extra)]
 extra[,race:=factor(race,levels=c("White","Non-White"))]
 
+
+gg <- ggplot(toplot[race %in% c("White","Black","Hispanic/Latino","Native American","Asian/Pacific Islander")],aes(x=as.numeric(as.character(age)),y=yll_rate*100,group=race,color=race)) + 
+  geom_line(size=1.5) +
+  ylab("YLL Rate (per million)") + xlab("Age") + 
+  scale_color_brewer("Race",type="qual",palette=7) +
+  ggtitle("Rate of Arrest-Related YLLs in White \nand Non-White Populations by Age, 2015-2016") + 
+  theme_bw()
+gg
+
 ## stacked bar
 
 gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
