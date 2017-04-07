@@ -241,93 +241,82 @@ write.csv(t3,paste0(rootdir,"/age_table.csv"),row.names=F)
 ## make figure
 ######################################################################
 
-toplot <- copy(dat[year=="2015-2016" & race!="All Races" & (!is.na(age_group) & age_group != "All Ages") & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
-toplot[,age:=substr(age_group,2,3)]
-toplot[,age:=gsub(",","",age)]
-setkey(toplot,age_group,age)
-toplot<- toplot[,list(race=race,gender=gender,year=year,cod=cod,armed=armed,pop=pop,avg_age=avg_age,death_count=death_count,yll_count=yll_count,
-             death_rate=death_rate,yll_rate=yll_rate,death_pct=death_count/sum(death_count),yll_pct=yll_count/sum(yll_count)),by=key(toplot)]
-toplot[,race:=factor(race,levels=c("White","Black","Hispanic/Latino","Native American","Asian/Pacific Islander","Arab-American","Other","Unknown"))]
+## creating four figures:
+## 1. Rates by race
+## 2. Counts by race
+## 3. Rates by white/non-white
+## 4. Counts by white/non-white
 
-extra <- copy(dat[year=="2015-2016" & (!race %in% c("All Races","Unknown")) & (!is.na(age_group) & age_group != "All Ages") & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
-extra[,age:=substr(age_group,2,3)]
-extra[,age:=gsub(",","",age)]
-setkey(extra,age_group,age)
-extra<- extra[,list(race=race,gender=gender,year=year,cod=cod,armed=armed,pop=pop,avg_age=avg_age,death_count=death_count,yll_count=yll_count,
-                      death_rate=death_rate,yll_rate=yll_rate,death_pct=death_count/sum(death_count),yll_pct=yll_count/sum(yll_count)),by=key(extra)]
-extra[race!="White",race:="Non-White"]
-setkey(extra,age_group,age,race,gender,year,cod,armed)
-extra <- extra[,list(pop=sum(pop),avg_age=weighted.mean(avg_age,w=death_count),death_count=sum(death_count),yll_count=sum(yll_count)),by=key(extra)]
-extra[,race:=factor(race,levels=c("White","Non-White"))]
+## dataset to plot by race, each race
+p <-  copy(dat[year=="2015-2016" & !age_group %in% c("All Ages") & !is.na(age_group) & cod== "All Causes" & 
+                 armed=="Armed or Unarmed" & gender=="Both" & !race %in% c("All Races")])
+p[,yll_count:=yll_count/2] ## get per-year average
+## collapse Other/Unknown
+p[race=="Other",race:="Other/Unknown"]
+p[race=="Unknown",race:="Other/Unknown"]
+setkey(p,race,gender,year,age_group)
+p <- p[,list(pop=sum(pop),death_count=sum(death_count),yll_count=sum(yll_count),
+             death_rate=weighted.mean(death_rate,w=pop),yll_rate=weighted.mean(yll_rate,w=pop)),by=key(p)]
+p[,age:=as.numeric(gsub(",","",substr(as.character(age_group),2,3)))]
+p[,race:=factor(race)]
+
+## dataset pooling white/POC
+p2 <- copy(p)
+## no population denominators for these categories, will not affect plot visually, will note included races in POC
+p2 <- p2[!race %in% c("Other/Unknown","Arab-American")]
+p2 <- p2[!race %in% c("White"),race:= "POC"]
+setkey(p2,race,gender,year,age_group,age)
+p2 <- p2[,list(pop=sum(pop),death_count=sum(death_count),yll_count=sum(yll_count),
+             death_rate=weighted.mean(death_rate,w=pop),yll_rate=weighted.mean(yll_rate,w=pop)),by=key(p2)]
+p2[,race:=factor(race,levels=sort(unique(p2$race)))]
 
 
-gg <- ggplot(toplot[race %in% c("White","Black","Hispanic/Latino","Native American","Asian/Pacific Islander")],aes(x=as.numeric(as.character(age)),y=yll_rate*100,group=race,color=race)) + 
-  geom_line(size=1.5) +
+prate <- copy(p)
+prate <- prate[!is.na(yll_rate)]
+prate[,race:=factor(race,levels=sort(unique(prate$race)))]
+
+myColors <- brewer.pal(7,"Set1")
+names(myColors) <- levels(p$race)
+colScale <- scale_colour_manual(name = "Race/Ethnicity",values = myColors)
+
+pdf(paste0(rootdir,"/yll_rate_count_plots.pdf"),width=10,height=8)
+
+## plot rates by race
+gg <- ggplot(prate,aes(x=as.numeric(as.character(age)),y=yll_rate,group=race,color=race)) + geom_line(size=1.5) +
   ylab("YLL Rate (per million)") + xlab("Age") + 
-  scale_color_brewer("Race",type="qual",palette=7) +
-  ggtitle("Rate of Arrest-Related YLLs in White \nand Non-White Populations by Age, 2015-2016") + 
+  ggtitle("Rate of YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
+  colScale +
   theme_bw()
-gg
+print(gg)
 
-## stacked bar
-
-gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
-        geom_bar(stat='identity') + ylab("YLLs") + xlab("Age") + 
-        scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
-        ggtitle("Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
-gg
-
-gg <- ggplot(extra, aes(x = as.numeric(as.character(age)), y = yll_count,fill=race)) +
-  geom_bar(stat='identity') + ylab("YLLs") + xlab("Age") + 
-  scale_fill_brewer("Race/Ethnicity",type="qual",palette=2) +
-  ggtitle("Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
-gg
-
-gg <- ggplot(toplot, aes(x = as.numeric(as.character(age)), y = yll_pct*100,fill=race)) +
-  geom_bar(stat='identity') + ylab("Percent oF YLLs") + xlab("Age") + 
-  scale_fill_brewer("Race/Ethnicity",type="qual",palette=7) +
-  ggtitle("Percent of Arrest-Related YLLs by Age and Race, 2015-2016") + theme_bw()
-gg
-
-gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=race)) + geom_line(size=1.5) +
-  ylab("YLL Count") + xlab("Age") + 
-  scale_color_manual("Distribution",values=c("firebrick3","dodgerblue3")) +
-  ggtitle("Rate of Arrest-Related YLLs in White \nand Non-White Populations by Age, 2015-2016") + 
+## plot counts by race
+gg <- ggplot(p,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=race)) + geom_line(size=1.5) +
+  ylab("Average YLLs per Year (2015-2016)") + xlab("Age") + 
+  ggtitle("YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
+  colScale +
   theme_bw()
-gg
+print(gg)
 
-## distributions
-toplot[race!="White",race:="Non-White"]
-setkey(toplot,race,gender,year,age_group,cod,armed)
-toplot <- toplot[,list(avg_age=weighted.mean(avg_age,w=death_count),yll_count=sum(yll_count),death_count=sum(death_count)),by=key(toplot)]
-toplot <- merge(toplot,bin[gender=="Both" & year=="2015-2016" & age_group != "All Ages"],by=c("race","gender","year","age_group"),all=T)
-toplot[is.na(death_count),death_count:=0]
-toplot[is.na(yll_count),yll_count:=0]
-plotrate <- copy(toplot)
-setkey(toplot,race,gender,year)
-toplot <- toplot[,list(pct_ylls=yll_count/sum(yll_count),age_group=age_group,pct_pop=pop/sum(pop)),by=key(toplot)]
-toplot <- melt(toplot,id.vars=c("race","gender","year","age_group"))
-toplot[,lines:=paste0(race,"_",variable)]
-toplot[,age:=substr(age_group,2,3)]
-toplot[,age:=gsub(",","",age)]
-toplot[,lines:=factor(lines,levels=c("Non-White_pct_ylls","Non-White_pct_pop","White_pct_ylls","White_pct_pop"),
-                      labels=c("Non-White YLLs","Non-White Population","White YLLs","White Population"))]
 
-gg <- ggplot(toplot,aes(x=as.numeric(as.character(age)),y=value*100,group=lines,color=lines)) + geom_line(size=1.5) +
-  ylab("Percent") + xlab("Age") + 
-  scale_color_manual("Distribution",values=c("firebrick4","firebrick1","dodgerblue4","dodgerblue")) +
-  ggtitle("Distribution of Population and Arrest-Related YLLs in White \nand Non-White Populations, 2015-2016") + 
-  theme_bw()
-gg
+myColors <- c("dodgerblue3","firebrick3")
+names(myColors) <- levels(p2$race)
+colScale <- scale_colour_manual(name = "Race/Ethnicity",values = myColors)
 
-plotrate[,yll_rate:=yll_count/pop*1000000]
-plotrate[,age:=substr(age_group,2,3)]
-plotrate[,age:=gsub(",","",age)]
-
-gg <- ggplot(plotrate,aes(x=as.numeric(as.character(age)),y=yll_rate*100,group=race,color=race)) + geom_line(size=1.5) +
+## plot rates by White/POC
+gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_rate,group=race,color=race)) + geom_line(size=1.5) +
   ylab("YLL Rate (per million)") + xlab("Age") + 
-  scale_color_manual("Distribution",values=c("firebrick3","dodgerblue3")) +
-  ggtitle("Rate of Arrest-Related YLLs in White \nand Non-White Populations by Age, 2015-2016") + 
+  ggtitle("Rate of YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
+  colScale +
   theme_bw()
-gg
+print(gg)
+
+## plot counts by White/POC
+gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=race)) + geom_line(size=1.5) +
+  ylab("Average YLLs per Year (2015-2016)") + xlab("Age") + 
+  ggtitle("YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
+  colScale +
+  theme_bw()
+print(gg)
+
+dev.off()
 
