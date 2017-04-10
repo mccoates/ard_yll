@@ -294,7 +294,7 @@ gg <- ggplot(prate,aes(x=as.numeric(as.character(age)),y=yll_rate,group=race,col
   ggtitle("Rate of YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
   colScale +
   theme_bw()
-print(gg)
+#print(gg)
 
 ## plot counts by race
 gg <- ggplot(p,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=race)) + geom_line(size=1.5) +
@@ -302,7 +302,7 @@ gg <- ggplot(p,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=
   ggtitle("YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
   colScale +
   theme_bw()
-print(gg)
+#print(gg)
 
 
 myColors <- c("dodgerblue3","firebrick3")
@@ -315,7 +315,7 @@ gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_rate,group=race,color=
   ggtitle("Rate of YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
   colScale +
   theme_bw()
-print(gg)
+#print(gg)
 
 ## plot counts by White/POC
 gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color=race)) + geom_line(size=1.5) +
@@ -323,7 +323,7 @@ gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color
   ggtitle("YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
   colScale +
   theme_bw()
-print(gg)
+#print(gg)
 
 
 myColors <- c("dodgerblue3","forestgreen",brewer.pal(9,"Greens")[c(5,6,7,9)])
