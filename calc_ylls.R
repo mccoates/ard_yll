@@ -3,6 +3,7 @@ rm(list=ls())
 library(tools)
 library(data.table)
 library(ggplot2)
+library(RColorBrewer)
 
 if (substr(Sys.info()["user"],4,5)=="33") {
   rootdir <- "M:/professional/race/thecounted-data/"
@@ -256,6 +257,7 @@ p[race=="Other",race:="Other/Unknown"]
 p[race=="Unknown",race:="Other/Unknown"]
 ## using the census categories of race/ethnicity when possible
 p[race=="Native American",race:="American Indian/Alaskan Native"]
+p[race=="Hispanic/Latino",race:="Hispanic"]
 setkey(p,race,gender,year,age_group)
 p <- p[,list(pop=sum(pop),death_count=sum(death_count),yll_count=sum(yll_count),
              death_rate=weighted.mean(death_rate,w=pop),yll_rate=weighted.mean(yll_rate,w=pop)),by=key(p)]
@@ -278,7 +280,7 @@ prate <- prate[!is.na(yll_rate)]
 prate[,race:=factor(race,levels=sort(unique(prate$race)))]
 
 ## dataset to plot counts, combining POC and keeping individual races as well
-combined <- rbind(p[race %in% c("Asian/Pacific Islander","Black","Hispanic/Latino","American Indian/Alaskan Native")],p2)
+combined <- rbind(p[race %in% c("Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")],p2)
 combined[,race:=factor(race,levels=sort(unique(combined$race)))]
 
 
@@ -327,16 +329,16 @@ gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color
 
 
 myColors <- c("dodgerblue3","forestgreen",brewer.pal(9,"Greens")[c(5,6,7,9)])
-names(myColors) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic/Latino","American Indian/Alaskan Native")
+names(myColors) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")
 colScale <- scale_colour_manual(name = "Race/Ethnicity",values = myColors)
 
 linetypes <- c("solid","dashed","solid","solid","solid","solid")
-names(linetypes) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic/Latino","American Indian/Alaskan Native")
+names(linetypes) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")
 lineScale <- scale_linetype_manual(name="Race/Ethnicity",values=linetypes)
 
 combined[,lab:=0]
 combined[race=="Black" & age==30,lab:=1]
-combined[race=="Hispanic/Latino" & age==25,lab:=1]
+combined[race=="Hispanic" & age==25,lab:=1]
 combined[race=="American Indian/Alaskan Native" & age==30,lab:=1]
 combined[race=="Asian/Pacific Islander" & age == 25,lab:=1]
 combined[race=="People of Color" & age == 15,lab:=1]
@@ -348,7 +350,7 @@ gg <- ggplot(combined,aes(x=as.numeric(as.character(age)),y=yll_count,group=race
   ylab("Average YLLs per Year (2015-2016)") + xlab("Age") + 
   #ggtitle("YLLs due to Police Violence by Race/Ethnicity, 2015-2016") + 
   geom_text(aes(label=ifelse(lab==1 & race=="Black",as.character(race),"")),size=4,vjust=-4) + 
-  geom_text(aes(label=ifelse(lab==1 & race=="Hispanic/Latino",as.character(race),"")),size=4,vjust=7) + 
+  geom_text(aes(label=ifelse(lab==1 & race=="Hispanic",as.character(race),"")),size=4,vjust=5) + 
   geom_text(aes(label=ifelse(lab==1 & race=="American Indian/Alaskan Native",as.character(race),"")),size=4,vjust=3) + 
   geom_text(aes(label=ifelse(lab==1 & race=="Asian/Pacific Islander",as.character(race),"")),size=4,vjust=-1.75) + 
   geom_text(aes(label=ifelse(lab==1 & race=="White",as.character(race),"")),size=4,vjust=-3) + 
