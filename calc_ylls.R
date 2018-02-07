@@ -39,12 +39,14 @@ cen <- melt(cen,id.vars=c("origin","race","sex","year"))
 setnames(cen,c("variable","value"),c("age","pop"))
 cen[,age:=gsub("pop_","",age)]
 cen[age=="total_pop",age:="All Ages"]
-## recode some of the variables
+## recode some of the variables based on the values given in the census data guidance
 cen[,origin:=factor(origin,labels=c("Total","Not Hispanic","Hispanic"))]
-cen[,race:=factor(race,labels=c("All races","White alone","Black alone","AIAN alone","Asian alone","AHPI alone","Two or More Races",
+cen[,race:=factor(race,labels=c("All races","White alone","Black alone","AIAN alone","Asian alone","NHPI alone","Two or More Races",
                                 "White alone or in combination","Black alone or in combination","AIAN alone or in combination",
                                 "Asian alone or in combination","NHPI alone or in combination"))]
 cen[,sex:=factor(sex,labels=c("both","male","female"))]
+
+
 ## recode races to match races from the counted
 ## the counted uses non-hispanic race-exclusive categories as denominators
 ## we will match their methods, but do sensitivity analyses to see if conclusions differ
@@ -62,7 +64,7 @@ wbn[,race:=gsub(" alone","",race)]
 wbn[race=="AIAN",race:="Native American"]
 
 ## Asian/Pacific Islander
-api <- copy(cen[(race %in% c("AHPI alone","Asian alone")) & origin == "Not Hispanic"])
+api <- copy(cen[(race %in% c("NHPI alone","Asian alone")) & origin == "Not Hispanic"])
 setkey(api,origin,sex,year,age)
 api <- api[,list(pop=sum(pop)),by=key(api)]
 api[,race:="Asian/Pacific Islander"]
@@ -119,10 +121,18 @@ bin <- rbind(bin,add)
 d <- merge(d,le,by="age",all.x=T)
 if (nrow(d[!is.na(age) & is.na(ylls)]) > 0) stop("predex didn't merge for some ages")
 
+## testing
+sum(d$ylls,na.rm=T)/2
+
 ## some ages unknown, we don't want to make assumptions about them, when making comparisons between age groups
 ## but we do want to count their YLLs in the "All Ages" category
 ## to make a conservative assumption, we will assign them the mean YLLs across the dataset
+## this would bias towards no difference between races (also only 11 deaths, will not change any interpretation)
 d[is.na(ylls),ylls:=mean(d$ylls,na.rm=T)]
+sum(d$ylls,na.rm=T)/2
+sum(d[year==2016]$ylls,na.rm=T)
+sum(d[year==2015]$ylls,na.rm=T)
+
 
 ########################################################
 ## collapse to counts by important variables
@@ -154,7 +164,25 @@ for (x in 1:nrow(aggloop)) {
 ## merge populations, make rates
 ####################################################################################
 
-dat <- merge(tot[,c("race","gender","year","age_group","pop"),with=F],tab,by=c("race","gender","year","age_group"),all.y=T)
+## create square dataset with pops for every age group and every combination of characteristic from numerator groups
+## so that there are 0 counts present in the dataset for combinations with no deaths (to have denominators for age group aggregation later)
+tomerge <- list()
+for (i in unique(tab[!is.na(cod)]$cod)) {
+  tomerge[[paste0(i)]] <- copy(tot)
+  tomerge[[paste0(i)]][,cod:=i]
+}
+tomerge <- rbindlist(tomerge)
+
+tomerge2 <- list()
+for (i in unique(tab[!is.na(armed)]$armed)) {
+  tomerge2[[paste0(i)]] <- copy(tomerge)
+  tomerge2[[paste0(i)]][,armed:=i]
+}
+tomerge2 <- rbindlist(tomerge2)
+
+dat <- merge(tomerge2[,c("race","gender","year","age_group","cod","armed","pop"),with=F],tab,by=c("race","gender","year","age_group","cod","armed"),all=T)
+dat[is.na(ylls),ylls:=0]
+dat[is.na(deaths),deaths:=0]
 dat[,death_rate:=deaths/pop*1000000]
 dat[,yll_rate:=ylls/pop*1000000]
 setnames(dat,c("deaths","ylls"),c("death_count","yll_count"))
@@ -167,9 +195,9 @@ t1 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & cod== "All Causes" 
 ## Other category should include arab-american/Other/Unknown
 t1[race %in% c("Other","Unknown"),race:="Other/Unknown"]
 setkey(t1,race)
-## make counts the average annual counts over the two years
+## make counts the average annual counts over the two years (here just summing other/unknown), also dividing by 2 to get average
 t1 <- t1[,list(death_count=sum(death_count)/2,death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count)/2,
-               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t1)]
+               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)/2),by=key(t1)]
 t1[,death_pct:=death_count/sum(death_count)*200]
 t1[,yll_pct:=yll_count/sum(yll_count)*200]
 t1[,pop_pct:=pop/t1[race=="All Races"]$pop*100]
@@ -188,22 +216,22 @@ t1 <- merge(t1,medrace,by="race",all=T)
 t1 <- t1[order(pop_pct,decreasing=T)]
 
 
-t2 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Male","Female","Non-conforming")])
-## Other category should include arab-american/Other/Unknown
-t2[,death_pct:=death_count/sum(death_count)*100]
-t2[,yll_pct:=yll_count/sum(yll_count)*100]
-t2[,pop_pct:=pop/sum(pop,na.rm=T)*100]
-t2[,death_count:=death_count/2]
-t2[,yll_count:=yll_count/2]
-t2 <- t2[,c("gender","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
-for (r in roundvars) {
-  t2[[r]] <- round(t2[[r]],1)
-}
-medrace <- copy(d)
-setkey(medrace,gender)
-medrace <- medrace[,list(med_age=median(age,na.rm=T)),by=key(medrace)]
-t2 <- merge(t2,medrace,by="gender",all=T)
-t2 <- t2[order(pop_pct,decreasing=T)]
+# t2 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Male","Female","Non-conforming")])
+# ## Other category should include arab-american/Other/Unknown
+# t2[,death_pct:=death_count/sum(death_count)*100]
+# t2[,yll_pct:=yll_count/sum(yll_count)*100]
+# t2[,pop_pct:=pop/sum(pop,na.rm=T)*100]
+# t2[,death_count:=death_count/2]
+# t2[,yll_count:=yll_count/2]
+# t2 <- t2[,c("gender","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+# for (r in roundvars) {
+#   t2[[r]] <- round(t2[[r]],1)
+# }
+# medrace <- copy(d)
+# setkey(medrace,gender)
+# medrace <- medrace[,list(med_age=median(age,na.rm=T)),by=key(medrace)]
+# t2 <- merge(t2,medrace,by="gender",all=T)
+# t2 <- t2[order(pop_pct,decreasing=T)]
 
  
 t3 <- copy(dat[year=="2015-2016" & age_group != "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Both")])
@@ -217,8 +245,9 @@ t3[age > 44 & age < 55,age_grp:="45 to 54 years"]
 t3[age > 54 & age < 65,age_grp:="55 to 64 years"]
 t3[age > 64,age_grp:="65+ years"]
 setkey(t3,age_grp)
+## aggregate age groups, and also average counts over years
 t3 <- t3[,list(death_count=sum(death_count)/2,death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count)/2,
-               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t3)]
+               yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)/2),by=key(t3)]
 ## Other category should include arab-american/Other/Unknown
 t3[,death_pct:=death_count/sum(death_count)*100]
 t3[,yll_pct:=yll_count/sum(yll_count)*100]
@@ -230,12 +259,130 @@ for (r in roundvars) {
 t3[,age_grp:=factor(age_grp,levels=c("<15 years","15 to 24 years","25 to 34 years","35 to 44 years","45 to 54 years","55 to 64 years","65+ years"))]
 t3 <- t3[order(age_grp,decreasing=F)]
 
+## find median by age group
+medage <- copy(d)
+medage[age < 15,age_grp:="<15 years"]
+medage[age > 14 & age < 25,age_grp:="15 to 24 years"]
+medage[age > 24 & age < 35,age_grp:="25 to 34 years"]
+medage[age > 34 & age < 45,age_grp:="35 to 44 years"]
+medage[age > 44 & age < 55,age_grp:="45 to 54 years"]
+medage[age > 54 & age < 65,age_grp:="55 to 64 years"]
+medage[age > 64,age_grp:="65+ years"]
+medage <- medage[!is.na(age)]
+setkey(medage,age_grp)
+medage <- medage[,list(med_age=median(age,na.rm=T)),by=key(medage)]
+t3 <- merge(t3,medage,by="age_grp",all=T)
+t3[,age_grp:=factor(age_grp,levels=c("<15 years","15 to 24 years","25 to 34 years","35 to 44 years","45 to 54 years","55 to 64 years","65+ years"))]
+t3 <- t3[order(age_grp,decreasing=F)]
+
 t1[,avg_age:=NULL]
-t2[,avg_age:=NULL]
+t3[,avg_age:=NULL]
+
 
 write.csv(t1,paste0(rootdir,"/race_table.csv"),row.names=F)
-write.csv(t2,paste0(rootdir,"/sex_table.csv"),row.names=F)
+#write.csv(t2,paste0(rootdir,"/sex_table.csv"),row.names=F)
 write.csv(t3,paste0(rootdir,"/age_table.csv"),row.names=F)
+
+
+########################################################
+## Make tables by year for appendix
+########################################################
+for (i in c(2015,2016)) {
+  
+  roundvars <- c("death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age","pop_pct")
+  t1 <- copy(dat[year==i & age_group == "All Ages" & cod== "All Causes" & armed=="Armed or Unarmed" & gender=="Both"])
+  ## Other category should include arab-american/Other/Unknown
+  t1[race %in% c("Other","Unknown"),race:="Other/Unknown"]
+  setkey(t1,race)
+  ## make counts the average annual counts over the two years (here just summing other/unknown), also dividing by 2 to get average
+  t1 <- t1[,list(death_count=sum(death_count),death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count),
+                 yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t1)]
+  t1[,death_pct:=death_count/sum(death_count)*200]
+  t1[,yll_pct:=yll_count/sum(yll_count)*200]
+  t1[,pop_pct:=pop/t1[race=="All Races"]$pop*100]
+  t1 <- t1[,c("race","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+  for (r in roundvars) {
+    t1[[r]] <- round(t1[[r]],1)
+  }
+  
+  ## find median by race
+  medrace <- copy(d[year==i])
+  medrace[race=="Other" | race=="Unknown",race:="Other/Unknown"]
+  setkey(medrace,race)
+  medrace <- medrace[,list(med_age=median(age,na.rm=T)),by=key(medrace)]
+  medrace <- rbind(data.frame(race="All Races",med_age=median(d[year==i]$age,na.rm=T)),medrace)
+  t1 <- merge(t1,medrace,by="race",all=T)
+  t1 <- t1[order(pop_pct,decreasing=T)]
+  
+  
+  # t2 <- copy(dat[year=="2015-2016" & age_group == "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Male","Female","Non-conforming")])
+  # ## Other category should include arab-american/Other/Unknown
+  # t2[,death_pct:=death_count/sum(death_count)*100]
+  # t2[,yll_pct:=yll_count/sum(yll_count)*100]
+  # t2[,pop_pct:=pop/sum(pop,na.rm=T)*100]
+  # t2[,death_count:=death_count/2]
+  # t2[,yll_count:=yll_count/2]
+  # t2 <- t2[,c("gender","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+  # for (r in roundvars) {
+  #   t2[[r]] <- round(t2[[r]],1)
+  # }
+  # medrace <- copy(d)
+  # setkey(medrace,gender)
+  # medrace <- medrace[,list(med_age=median(age,na.rm=T)),by=key(medrace)]
+  # t2 <- merge(t2,medrace,by="gender",all=T)
+  # t2 <- t2[order(pop_pct,decreasing=T)]
+  
+  
+  t3 <- copy(dat[year==i & age_group != "All Ages" & race== "All Races" & cod== "All Causes" & armed=="Armed or Unarmed" & gender %in% c("Both")])
+  t3[,age:=substr(age_group,2,3)]
+  t3[,age:=as.numeric(as.character(gsub(",","",age)))]
+  t3[age < 15,age_grp:="<15 years"]
+  t3[age > 14 & age < 25,age_grp:="15 to 24 years"]
+  t3[age > 24 & age < 35,age_grp:="25 to 34 years"]
+  t3[age > 34 & age < 45,age_grp:="35 to 44 years"]
+  t3[age > 44 & age < 55,age_grp:="45 to 54 years"]
+  t3[age > 54 & age < 65,age_grp:="55 to 64 years"]
+  t3[age > 64,age_grp:="65+ years"]
+  setkey(t3,age_grp)
+  ## aggregate age groups, and also average counts over years
+  t3 <- t3[,list(death_count=sum(death_count),death_rate=weighted.mean(death_rate,w=pop),yll_count=sum(yll_count),
+                 yll_rate=weighted.mean(yll_rate,w=pop),avg_age=weighted.mean(avg_age,w=death_count),pop=sum(pop)),by=key(t3)]
+  ## Other category should include arab-american/Other/Unknown
+  t3[,death_pct:=death_count/sum(death_count)*100]
+  t3[,yll_pct:=yll_count/sum(yll_count)*100]
+  t3[,pop_pct:=pop/sum(pop)*100]
+  t3 <- t3[,c("age_grp","pop_pct","death_count","death_pct","death_rate","yll_count","yll_pct","yll_rate","avg_age"),with=F]
+  for (r in roundvars) {
+    t3[[r]] <- round(t3[[r]],1)
+  }
+  t3[,age_grp:=factor(age_grp,levels=c("<15 years","15 to 24 years","25 to 34 years","35 to 44 years","45 to 54 years","55 to 64 years","65+ years"))]
+  t3 <- t3[order(age_grp,decreasing=F)]
+  
+  ## find median by age group
+  medage <- copy(d[year==i])
+  medage[age < 15,age_grp:="<15 years"]
+  medage[age > 14 & age < 25,age_grp:="15 to 24 years"]
+  medage[age > 24 & age < 35,age_grp:="25 to 34 years"]
+  medage[age > 34 & age < 45,age_grp:="35 to 44 years"]
+  medage[age > 44 & age < 55,age_grp:="45 to 54 years"]
+  medage[age > 54 & age < 65,age_grp:="55 to 64 years"]
+  medage[age > 64,age_grp:="65+ years"]
+  medage <- medage[!is.na(age)]
+  setkey(medage,age_grp)
+  medage <- medage[,list(med_age=median(age,na.rm=T)),by=key(medage)]
+  t3 <- merge(t3,medage,by="age_grp",all=T)
+  t3[,age_grp:=factor(age_grp,levels=c("<15 years","15 to 24 years","25 to 34 years","35 to 44 years","45 to 54 years","55 to 64 years","65+ years"))]
+  t3 <- t3[order(age_grp,decreasing=F)]  
+  
+  t1[,avg_age:=NULL]
+  t3[,avg_age:=NULL]
+  
+  
+  write.csv(t1,paste0(rootdir,"/race_table",i,".csv"),row.names=F)
+  #write.csv(t2,paste0(rootdir,"/sex_table.csv"),row.names=F)
+  write.csv(t3,paste0(rootdir,"/age_table",i,".csv"),row.names=F)
+  
+}
 
 
 ######################################################################
@@ -331,6 +478,12 @@ gg <- ggplot(p2,aes(x=as.numeric(as.character(age)),y=yll_count,group=race,color
 myColors <- c("dodgerblue3","forestgreen",brewer.pal(9,"Greens")[c(5,6,7,9)])
 names(myColors) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")
 colScale <- scale_colour_manual(name = "Race/Ethnicity",values = myColors)
+
+
+myColors <- c("gray0","gray25","gray70","gray60","gray50","gray40")
+names(myColors) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")
+colScale <- scale_colour_manual(name = "Race/Ethnicity",values = myColors)
+
 
 linetypes <- c("solid","dashed","solid","solid","solid","solid")
 names(linetypes) <- c("White","People of Color","Asian/Pacific Islander","Black","Hispanic","American Indian/Alaskan Native")
