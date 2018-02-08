@@ -123,12 +123,19 @@ if (nrow(d[!is.na(age) & is.na(ylls)]) > 0) stop("predex didn't merge for some a
 
 ## testing
 sum(d$ylls,na.rm=T)/2
+nrow(d[is.na(age)])/nrow(d)*100
+nrow(d[is.na(age) & year == 2015])
+nrow(d[is.na(age) & year == 2016])
+
+nrow(d[is.na(age) & year == 2015])/nrow(d[year==2015])*100
+nrow(d[is.na(age) & year == 2016])/nrow(d[year==2016])*100
 
 ## some ages unknown, we don't want to make assumptions about them, when making comparisons between age groups
 ## but we do want to count their YLLs in the "All Ages" category
 ## to make a conservative assumption, we will assign them the mean YLLs across the dataset
 ## this would bias towards no difference between races (also only 11 deaths, will not change any interpretation)
-d[is.na(ylls),ylls:=mean(d$ylls,na.rm=T)]
+## now, not making any assumption, going to exclude these 11 deaths from YLL counts
+#d[is.na(ylls),ylls:=mean(d$ylls,na.rm=T)]
 sum(d$ylls,na.rm=T)/2
 sum(d[year==2016]$ylls,na.rm=T)
 sum(d[year==2015]$ylls,na.rm=T)
@@ -140,7 +147,7 @@ sum(d[year==2015]$ylls,na.rm=T)
 tab <- copy(d)
 setkey(tab,age_group,gender,race,year,cod,armed)
 tab[,deaths:=1]
-tab <- tab[,list(avg_age=mean(age),deaths=sum(deaths),ylls=sum(ylls)),by=key(tab)]
+tab <- tab[,list(avg_age=mean(age),deaths=sum(deaths),ylls=sum(ylls,na.rm=T)),by=key(tab)]
 
 ######################################################################################
 ## collapse to create both-gender, all-race, all-death type, all-armed counts, all-age
